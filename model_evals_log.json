@@ -1,0 +1,75 @@
+[
+    {
+        "date": "08_Feb_17-09",
+        "graph_details": {
+            "num_nodes": 1706,
+            "num_edges": 383616,
+            "num_interaction_types": 86,
+            "feature_dimension": 1032
+        },
+        "config": {
+            "n_features": 1032,
+            "n_hidden": 256,
+            "n_classes": 86,
+            "n_heads": 8,
+            "dropout": 0.3
+        },
+        "runtime_info": {
+            "device": "cuda",
+            "total_parameters": 410518,
+            "trainable_parameters": 410518,
+            "model_size_mb": 1.57,
+            "training_edges": 268531,
+            "validation_edges": 57542,
+            "test_edges": 57543
+        },
+        "training_info": {
+            "epochs_completed": 50,
+            "best_epoch": 50,
+            "learning_rate": 0.001,
+            "batch_size": 7000,
+            "weight_decay": 0.0005
+        },
+        "metrics": {
+            "train_loss": 0.831,
+            "train_acc": 0.732,
+            "train_f1": 0.719,
+            "val_loss": 0.665,
+            "val_acc": 0.777,
+            "val_f1": 0.766,
+            "best_val_acc": 0.777,
+            "best_val_f1": 0.766,
+            "test_acc": 0.809,
+            "test_f1": 0.795
+        }
+    },
+    {
+        "date": "08_Feb_17-09",
+        "graph_details": {
+            "Number of edges": 383616,
+            "Number of interaction types": 86,
+            "Feature dimension": 1032
+        },
+        "config": {
+            "n_features": 1032,
+            "n_hidden": 256,
+            "n_classes": 86,
+            "n_heads": 8,
+            "dropout": 0.3
+        },
+        "runtime_info": {
+            "device": "cuda",
+            "parameters": 410518,
+            "training_edges": 268531,
+            "validation_edges": 57542
+        },
+        "metrics": {
+            "train_loss": 0.8311285265783493,
+            "train_acc": 0.7316585422167273,
+            "train_f1": 0.7187711596187664,
+            "val_loss": 0.6650442362809503,
+            "val_acc": 0.7770150498766119,
+            "val_f1": 0.7658978225489413
+        }
+    }
+]
