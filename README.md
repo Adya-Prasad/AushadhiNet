@@ -210,3 +210,17 @@ If you encounter issues:
 2. Verify file formats and paths
 3. Ensure model was trained successfully
 4. Check Python environment and dependencies
+
+
+
+## Local Setup
+
+1. Create Virtual env
+```
+conda create --prefix ./env python=3.11 -y
+```
+
+2. activate it
+```
+conda activate .\.condaenv3.11
+```
