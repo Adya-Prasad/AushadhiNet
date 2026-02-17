@@ -8,6 +8,16 @@ Input: Molecular SMILES + Drug Interaction Topology
 
 Mission: Safeguarding cardiac patients by predicting adverse drug-drug interactions (DDIs) before they happen.
 
+### SOME COMMON INTERACTION
+
+| Pair | Drug A (Name & ID) | Drug B (Name & ID) | Expected Risk | Clinical Logic |
+| :--- | :--- | :--- | :--- | :--- |
+| 1 | Warfarin (DB00682) | Aspirin (DB00945) | 🚨 High Risk | Classic interaction; both thin the blood, significantly increasing bleeding risk. |
+| 2 | Amoxicillin (DB01060) | Clavulanic Acid (DB00766) | ✅ Safe | These are frequently sold as a single combination pill (Augmentin). |
+| 3 | Sildenafil (DB00203) | Nitroglycerin (DB00732) | 🚨 Critical Risk | Severe drop in blood pressure. A "never-pair" in medicine. |
+| 4 | Metformin (DB00331) | Atorvastatin (DB01076) | ✅ Safe | Commonly prescribed together for patients with both Diabetes and High Cholesterol. |
+| 5 | Ibuprofen (DB01050) | Naproxen (DB00788) | ⚠️ Moderate | Has the potential to increase the risk of adverse effects including GI bleeding, kidney dysfunction, and non-fatal myocardial infarction |
+| 6 | Alprazolam (DB00404) | Chlorpheniramine (DB01114) | Safe | Safe
 
 ## Model Working:
 {
@@ -16,9 +26,6 @@ Mission: Safeguarding cardiac patients by predicting adverse drug-drug interacti
   "side_effects": ["Bradycardia", "Hypotension"],
   "confidence": 0.83
 }
-
-
-
 
 
 # Dhadkan Model Testing Guide
