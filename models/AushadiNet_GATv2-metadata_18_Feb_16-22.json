@@ -1,0 +1,39 @@
+[
+    {
+        "date": "18_Feb_16-22",
+        "total_training_duration": [
+            "0:07:49"
+        ],
+        "config": {
+            "physical_batch_size": 512,
+            "accumulation_steps": 4,
+            "hidden_dim": 384,
+            "n_heads": 6,
+            "dropout": 0.25,
+            "n_gat_layers": 3,
+            "lr": 0.0003,
+            "weight_decay": 5e-05,
+            "epochs": 10,
+            "type_loss_weight": 0.3,
+            "use_class_weights": true,
+            "focal_loss": true,
+            "focal_alpha": 0.7,
+            "focal_gamma": 2.0,
+            "scheduler_patience": 7,
+            "scheduler_factor": 0.5,
+            "min_lr": 1e-06,
+            "full_graph_on_gpu": true,
+            "validate_every_n_epochs": 2,
+            "use_compile": true,
+            "edge_dropout_rate": 0.05,
+            "feature_noise": 0.005
+        },
+        "training_metadata": {
+            "Training Loss": 0.632,
+            "Validation Accuracy": 0.527,
+            "Validation F1-Score": 0.657,
+            "Validation Precision": 0.516,
+            "Validation Recall": 0.905
+        }
+    }
+]
