@@ -1,0 +1,124 @@
+[
+    {
+        "date": "18_Feb_21-37",
+        "total_training_duration": [
+            "0:04:41"
+        ],
+        "config": {
+            "physical_batch_size": 512,
+            "accumulation_steps": 4,
+            "hidden_dim": 384,
+            "n_heads": 6,
+            "dropout": 0.25,
+            "n_gat_layers": 3,
+            "lr": 0.0003,
+            "weight_decay": 5e-05,
+            "epochs": 10,
+            "type_loss_weight": 0.3,
+            "use_class_weights": true,
+            "focal_loss": true,
+            "focal_alpha": 0.7,
+            "focal_gamma": 2.0,
+            "scheduler_patience": 7,
+            "scheduler_factor": 0.5,
+            "min_lr": 1e-06,
+            "full_graph_on_gpu": true,
+            "validate_every_n_epochs": 2,
+            "use_compile": true,
+            "edge_dropout_rate": 0.05,
+            "feature_noise": 0.005
+        },
+        "training_metadata": {
+            "Training Loss": 0.629,
+            "Validation Accuracy": 0.526,
+            "Validation F1-Score": 0.644,
+            "Validation Precision": 0.516,
+            "Validation Recall": 0.855
+        },
+        "Validation Accuracy History": [
+            0.0,
+            0.4999956553851501,
+            0.4999956553851501,
+            0.5198331667897641,
+            0.5198331667897641,
+            0.5026284919841856,
+            0.5026284919841856,
+            0.5015597167311118,
+            0.5015597167311118,
+            0.5264196029022027
+        ],
+        "Training Loss History": [
+            1.3667698891760622,
+            1.0333657476649725,
+            0.9001505672079364,
+            0.825504716233598,
+            0.7824531517447008,
+            0.7376229501088764,
+            0.7138743764792771,
+            0.680201661654946,
+            0.6522006576577178,
+            0.6291786260100293
+        ]
+    },
+    {
+        "Training Data": "18_Feb_21-37",
+        "Total Training Duration": [
+            "0:04:41"
+        ],
+        "Training Configuration": {
+            "physical_batch_size": 512,
+            "accumulation_steps": 4,
+            "hidden_dim": 384,
+            "n_heads": 6,
+            "dropout": 0.25,
+            "n_gat_layers": 3,
+            "lr": 0.0003,
+            "weight_decay": 5e-05,
+            "epochs": 10,
+            "type_loss_weight": 0.3,
+            "use_class_weights": true,
+            "focal_loss": true,
+            "focal_alpha": 0.7,
+            "focal_gamma": 2.0,
+            "scheduler_patience": 7,
+            "scheduler_factor": 0.5,
+            "min_lr": 1e-06,
+            "full_graph_on_gpu": true,
+            "validate_every_n_epochs": 2,
+            "use_compile": true,
+            "edge_dropout_rate": 0.05,
+            "feature_noise": 0.005
+        },
+        "Final Training Metadata": {
+            "Training Loss": 0.629,
+            "Validation Accuracy": 0.526,
+            "Validation F1-Score": 0.644,
+            "Validation Precision": 0.516,
+            "Validation Recall": 0.855
+        },
+        "Validation Accuracy History": [
+            0.0,
+            0.4999956553851501,
+            0.4999956553851501,
+            0.5198331667897641,
+            0.5198331667897641,
+            0.5026284919841856,
+            0.5026284919841856,
+            0.5015597167311118,
+            0.5015597167311118,
+            0.5264196029022027
+        ],
+        "Training Loss History": [
+            1.3667698891760622,
+            1.0333657476649725,
+            0.9001505672079364,
+            0.825504716233598,
+            0.7824531517447008,
+            0.7376229501088764,
+            0.7138743764792771,
+            0.680201661654946,
+            0.6522006576577178,
+            0.6291786260100293
+        ]
+    }
+]

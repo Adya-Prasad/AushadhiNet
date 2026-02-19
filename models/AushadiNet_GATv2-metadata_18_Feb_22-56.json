@@ -1,0 +1,76 @@
+[
+    {
+        "Training Data": "18_Feb_22-56",
+        "Total Training Duration": [
+            "0:07:23"
+        ],
+        "Training Configuration": {
+            "physical_batch_size": 512,
+            "accumulation_steps": 4,
+            "hidden_dim": 384,
+            "n_heads": 6,
+            "dropout": 0.25,
+            "n_gat_layers": 3,
+            "lr": 0.0003,
+            "weight_decay": 5e-05,
+            "epochs": 10,
+            "type_loss_weight": 0.3,
+            "use_class_weights": true,
+            "focal_loss": true,
+            "focal_alpha": 0.7,
+            "focal_gamma": 2.0,
+            "scheduler_patience": 7,
+            "scheduler_factor": 0.5,
+            "min_lr": 1e-06,
+            "full_graph_on_gpu": true,
+            "validate_every_n_epochs": 2,
+            "use_compile": true,
+            "edge_dropout_rate": 0.05,
+            "feature_noise": 0.005
+        },
+        "Final Training Metadata": {
+            "Training Loss": 0.625,
+            "Validation Accuracy": 0.5,
+            "Validation F1-Score": 0.667,
+            "Validation Precision": 0.5,
+            "Validation Recall": 1.0
+        },
+        "Model Evaluation Result": {
+            "Binary Classification": {
+                "Accuracy": 0.501,
+                "F1 Score": 0.667,
+                "Precision": 0.5,
+                "Recall": 1.0,
+                "ROC-AUC": 0.64
+            },
+            "Type Classification": {
+                "Accuracy": 0.178,
+                "F1 Score": 0.054
+            }
+        },
+        "Validation Accuracy History": [
+            0.0,
+            0.500447495329539,
+            0.500447495329539,
+            0.5009167137333276,
+            0.5009167137333276,
+            0.5029847504018768,
+            0.5029847504018768,
+            0.5001607507494461,
+            0.5001607507494461,
+            0.5000043446148499
+        ],
+        "Training Loss History": [
+            1.3703285426157106,
+            1.0099151015168035,
+            0.8896700312002599,
+            0.816330504485604,
+            0.7655297236515296,
+            0.7378096857789134,
+            0.7004217574207753,
+            0.6701165200757117,
+            0.6423691799233822,
+            0.6245501193122937
+        ]
+    }
+]
