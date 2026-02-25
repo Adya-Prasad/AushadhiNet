@@ -8,13 +8,14 @@ import pandas as pd
 import numpy as np
 import os
 import requests
+import re
 import time
 import json
 import itertools
 import torch.nn.functional as F
 from torch_geometric.nn import GATv2Conv
 from safetensors.torch import load_file
-from rdkit import Chemss
+from rdkit import Chem
 from rdkit.Chem import Draw
 
 # 1 CONFIGURATION & PATHS
@@ -160,7 +161,7 @@ def load_system():
     with open(MODEL_CONFIG, 'r') as f:
         metadata_list = json.load(f)    
     metadata = metadata_list[0] if isinstance(metadata_list, list) else metadata_list
-    config = metadata.get('training_onfiguration', metadata.get('training_configuration', {}))    
+    config = metadata.get('training_configuration', metadata.get('training_configuration', {}))    
     if not config:
         raise ValueError("Could not find training configuration in metadata JSON")    
     print(f"✓ Loaded config: hidden_dim={config['hidden_dim']}, n_heads={config['n_heads']}, n_gat_layers={config['n_gat_layers']}")
@@ -202,7 +203,11 @@ def load_system():
     
     # Initialize Model
     model = GATv2NN(
-        dims={'v1': 1024, 'v2': 167, 'v3': 8},
+        dims = {
+            'v1': graph_data['x_v1'].shape[1],
+            'v2': graph_data['x_v2'].shape[1],
+            'v3': graph_data['x_v3'].shape[1],
+            },
         hidden_dim=config['hidden_dim'],
         n_heads=config['n_heads'],
         n_types=graph_data['n_types'],
@@ -215,91 +220,93 @@ def load_system():
         raise FileNotFoundError(f"Model weights not found at {MODEL_WEIGHTS}")
     
     state_dict = load_file(MODEL_WEIGHTS)
-    model.load_state_dict(state_dict, strict=False)
+    load_result = model.load_state_dict(state_dict, strict=False)
+
+    if load_result.missing_keys:
+        print(f"⚠︎ Missing keys ({len(load_result.missing_keys)}): {load_result.missing_keys}")
+    if load_result.unexpected_keys:
+        print(f"⚠︎ Unexpected keys ({len(load_result.unexpected_keys)}): {load_result.unexpected_keys}")
+    if not load_result.missing_keys and not load_result.unexpected_keys:
+        print("✓ Model weights loaded with perfect key match")
+
     model.eval()
-    
     print(f"✓ Model loaded successfully")
     
     return model, drug_map, smiles_df, name_dict, config, graph_data
 
 
-# --- 5. DRUG INFORMATION LOOKUP (PubChem API) ---
+# 5 DRUG INFORMATION LOOKUP (PubChem API)
+HEADERS = {"User-Agent": "AushadhiNet/1.0 (Research Application)"}
 
+# Ordered by clinical relevance for a general audience
+CLINICAL_SECTIONS = [
+    "Drug Indication",
+    "Therapeutic Uses",
+    "Pharmacology",
+    "Mechanism of Action",
+]
 
-@st.cache_data(ttl=3600)  # Cache for 1 hour
-def get_drug_description_from_pubchem(drug_name):
+def _extract_section(sections: list, targets: list) -> str | None:
     """
-    Fetch drug description from PubChem API.
-    Returns description or None if not found.
+    Recursively traverse PubChem's section tree and return the first
+    StringWithMarkup text that matches any heading in `targets`.
+    """
+    for section in sections:
+        if section.get("TOCHeading") in targets:
+            for info in section.get("Information", []):
+                swm = info.get("Value", {}).get("StringWithMarkup")
+                if swm:
+                    return swm[0].get("String", "").strip()
+        if "Section" in section:
+            result = _extract_section(section["Section"], targets)
+            if result:
+                return result
+    return None
+
+@st.cache_data(ttl=86400)
+def get_drug_description(drug_name: str, sentences: int = 2) -> str:
+    """
+    Strategy:
+      1. Resolve drug name → CID via PubChem PUG REST.
+      2. Fetch the full PUG View record.
+      3. Walk CLINICAL_SECTIONS in priority order; return first hit.
+    Args: drug_name: Generic or brand drug name and sentences: Number of sentences to return
+    Returns: A concise clinical description string, or a fallback message.
     """
     try:
-        # Clean drug name
-        drug_name_clean = drug_name.strip().lower()
-        
-        # Step 1: Search for compound by name
-        search_url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{drug_name_clean}/cids/JSON"
-        response = requests.get(search_url, timeout=3)
-        
-        if response.status_code == 200:
-            data = response.json()
-            cid = data['IdentifierList']['CID'][0]
-            
-            # Step 2: Get compound description
-            desc_url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/description/JSON"
-            desc_response = requests.get(desc_url, timeout=3)
-            
-            if desc_response.status_code == 200:
-                desc_data = desc_response.json()
-                if 'InformationList' in desc_data and 'Information' in desc_data['InformationList']:
-                    descriptions = desc_data['InformationList']['Information']
-                    if descriptions:
-                        # Get the first description
-                        description = descriptions[0].get('Description', '')
-                        # Limit to first 200 characters for display
-                        if len(description) > 200:
-                            description = description[:197] + "..."
-                        return description
-        
-        return None
-    except Exception as e:
-        print(f"PubChem API error for {drug_name}: {e}")
-        return None
+        name = drug_name.strip().lower()
 
+        cid_resp = requests.get(
+            f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{name}/cids/JSON",
+            headers=HEADERS, timeout=5,
+        )
+        if cid_resp.status_code != 200:
+            return "Description not available."
 
-@st.cache_data
-def get_drug_description(drug_name):
-    """
-    Get drug description using PubChem API with fallback to curated database.
-    """
-    # Try PubChem API first
-    pubchem_desc = get_drug_description_from_pubchem(drug_name)
-    if pubchem_desc:
-        return pubchem_desc
-    
-    # Fallback: Curated CVD drug descriptions (for offline/API failure scenarios)
-    drug_descriptions = {
-        "metoprolol": "Beta-blocker used to treat high blood pressure, chest pain, heart failure, and to prevent heart attacks.",
-        "atenolol": "Beta-blocker that slows heart rate and reduces blood pressure.",
-        "atorvastatin": "Statin medication that lowers LDL cholesterol and reduces cardiovascular risk.",
-        "simvastatin": "Statin used to lower cholesterol and triglycerides.",
-        "lisinopril": "ACE inhibitor used to treat high blood pressure and heart failure.",
-        "warfarin": "Anticoagulant (blood thinner) used to prevent blood clots and reduce stroke risk.",
-        "aspirin": "Antiplatelet medication that prevents blood clots.",
-        "clopidogrel": "Antiplatelet drug that prevents blood clots in patients with heart disease.",
-        "furosemide": "Loop diuretic used to treat fluid retention and high blood pressure.",
-        "amlodipine": "Calcium channel blocker that relaxes blood vessels and lowers blood pressure.",
-    }
-    
-    # Try curated database (case-insensitive)
-    drug_lower = drug_name.lower()
-    for key, desc in drug_descriptions.items():
-        if key in drug_lower or drug_lower in key:
-            return desc
-    
-    # Final fallback
-    return f"Cardiovascular medication. (DrugBank ID: {drug_name})"
+        cid = cid_resp.json()["IdentifierList"]["CID"][0]
 
+        rec_resp = requests.get(
+            f"https://pubchem.ncbi.nlm.nih.gov/rest/pug_view/data/compound/{cid}/JSON",
+            headers=HEADERS, timeout=10,
+        )
+        if rec_resp.status_code != 200:
+            return "Description not available."
 
+        all_sections = rec_resp.json().get("Record", {}).get("Section", [])
+
+        # Walk sections in clinical priority order
+        for target in CLINICAL_SECTIONS:
+            text = _extract_section(all_sections, [target])
+            if text:
+                parts = re.split(r'(?<=[.!?])\s+', text)
+                return " ".join(parts[:sentences]).strip()
+
+        return "Description not available."
+
+    except Exception:
+        return "Description not available."
+
+# Sidebar calculation
 def calculate_patient_risk_score(age, bp_systolic, bp_diastolic, cholesterol, smoking, activity):
     """
     Calculate patient cardiovascular risk score using clinical guidelines.
@@ -477,9 +484,9 @@ div[data-baseweb="select"] input{color:#392d2b!important;caret-color:#392d2b!imp
 div[data-baseweb="select"] div{color:#392d2b!important;}
 div[data-baseweb="select"] input::placeholder{color:#392d2b!important;opacity:.8!important;}
 
-div[data-testid="stButton"]{display:flex;align-items:flex-end;}
-div[data-testid="stButton"]>button{background-color:#cb785c!important;color:#fff!important;border-radius:10px!important;border:none!important;font-weight:600;padding:.6rem 2.5rem;transition:all .2s ease-in-out;}
-div[data-testid="stButton"]>button:hover{background-color:#b06045!important;}
+div[data-testid="stForm"]{border:none!important;background:transparent!important;padding:0!important;}
+div[data-testid="stFormSubmitButton"]>button{background-color:#cb785c!important;color:#fff!important;border-radius:10px!important;border:none!important;font-weight:600;padding:.6rem 2.5rem;}
+div[data-testid="stFormSubmitButton"]>button:hover{background-color:#b06045!important;}
 
 div[data-testid="stVerticalBlockBorderWrapper"]{border:2px solid #D2691E!important;background-color:#fff!important;border-radius:12px;}
 div[data-testid="stAlert"]{background-color:#ffebd6!important;color:#4e5e6c!important;border-radius:12px!important;border:none!important;}
@@ -547,40 +554,39 @@ if "drug_count" not in st.session_state:
 
 MAX_DRUGS = 4
 
-# Create dynamic columns (drug inputs + add button)
-total_columns = st.session_state.drug_count + (
-    1 if st.session_state.drug_count < MAX_DRUGS else 0
-)
+with st.form("drug_form"):
+    total_columns = st.session_state.drug_count + (
+        1 if st.session_state.drug_count < MAX_DRUGS else 0
+    )
+    cols = st.columns(total_columns)
+    selected_drugs = []
 
-cols = st.columns(total_columns)
-selected_drugs = []
+    for i in range(st.session_state.drug_count):
+        with cols[i]:
+            drug = st.selectbox(
+                f"Drug {i+1}",
+                list(drug_map.keys()),
+                format_func=get_label,
+                key=f"drug_{i}"
+            )
+            selected_drugs.append(drug)
 
-for i in range(st.session_state.drug_count):
-    with cols[i]:
-        drug = st.selectbox(
-            f"Drug {i+1}",
-            list(drug_map.keys()),
-            format_func=get_label,
-            key=f"drug_{i}"
-        )
-        selected_drugs.append(drug)
+    col_add, col_predict = st.columns([1, 4])
+    with col_add:
+        add_clicked = st.form_submit_button("十 Add Drug")
+    with col_predict:
+        predict_clicked = st.form_submit_button("PREDICT")
 
-# add button in last column
-if st.session_state.drug_count < MAX_DRUGS:
-    with cols[-1]:
-        st.write(" ")
-        if st.button("十"):
-            st.session_state.drug_count += 1
-            st.rerun()
+if add_clicked and st.session_state.drug_count < MAX_DRUGS:
+    st.session_state.drug_count += 1
+    st.rerun()
 
-if st.button("PREDICT"):
+if predict_clicked:
     # Remove duplicates
     unique_drugs = list(dict.fromkeys(selected_drugs))
 
     if len(unique_drugs) < 2:
         st.warning("⚠︎ Please select at least two distinct drugs.")
-    elif len(set(selected_drugs)) != len(selected_drugs):
-        st.warning("⚠︎ Please select different drugs in each field.")
         st.stop()
     else:
         pairs = list(itertools.combinations(unique_drugs, 2))
@@ -608,8 +614,8 @@ if st.button("PREDICT"):
             name_b = name_dict.get(drug_b, drug_b)
             
             # Get drug descriptions
-            desc_a = get_drug_description(name_a)
-            desc_b = get_drug_description(name_b)
+            drug_a_desc = get_drug_description(name_a)
+            drug_b_desc = get_drug_description(name_b)
 
             score = result['interaction_probability']
             safe_prob = 1 - score
@@ -632,40 +638,41 @@ if st.button("PREDICT"):
                     if img_a:
                         st.image(img_a, width='stretch')
                 with col2:
-                    text_color = "#ce0000" if binary_pred == 1 else "#0e992a"
+                    text_color = "#c41414" if binary_pred == 1 else "#0e992a"
                     status_text = "⚠︎ ADVERSE INTERACTION DETECTED " if binary_pred == 1 else "(✔) SAFE PAIR, NO INTERACTION DETECTED"
-                    
-                    # Add patient risk context if enabled
-                    risk_context = ""
+                    items = [
+                    f'<li style="font-weight:600;font-size:1.14rem;margin-bottom:8px;color:{text_color};">{status_text}</li>',
+                    f'<li>Drug Pair: <b>{name_a} + {name_b}</b></li>',
+                    ]
+
+                    if binary_pred == 1:
+                        items.append(f'<li>Interaction Probability: <b>{score:.2%}</b></li>')
+                        items.append(f'<li>Interaction Type: <b>{pred_type}</b></li>')
+                        items.append(f'<li>Interaction Type Probability: <b>{type_prob:.2%}</b></li>')
+                    else:
+                        items.append(f'<li>Safe Probability: <b>{safe_prob:.2%}</b></li>')
+
+                    items.append(f"<li>Drug '{name_a}' description: <b>{drug_a_desc}</b></li>")
+                    items.append(f"<li>Drug '{name_b}' description: <b>{drug_b_desc}</b></li>")
+
                     if enable_risk_profiling and binary_pred == 1:
                         if risk_level == "HIGH":
-                            risk_context = f"<li style='color: #ce0000;'><b>⚠ HIGH-RISK PATIENT:</b> Extra caution required</li>"
+                            items.append("<li style='color:#ce0000;'><b>⚠ HIGH-RISK PATIENT:</b> Extra caution required</li>")
                         elif risk_level == "MEDIUM":
-                            risk_context = f"<li style='color: #ff8c00;'><b>⚠ MEDIUM-RISK PATIENT:</b> Monitor closely</li>"
+                            items.append("<li style='color:#ff8c00;'><b>⚠ MEDIUM-RISK PATIENT:</b> Monitor closely</li>")
 
-                    st.markdown(f"""
-                    <div style="padding:0.5rem; align-item:center; display: inline;">
-                        <ul style="font-size:1.05rem; line-height:1.6; padding-left:1.2rem;">
-                        <li style="font-weight:600; font-size:1.14rem; margin-bottom:8px; color:{text_color};">{status_text}</li>
-                        <li>Drug Pair: <b >{name_a} + {name_b}</b></li>
-                        {f"<li>Interaction Probability: <b> {score:.2%}</b></li>" if binary_pred == 1 else f"<li>Safe Probability: <b> {safe_prob:.2%}</b></li>"}
-                        {f"<li>Interaction Type: <b> {pred_type}</b></li>" if binary_pred == 1 else ""}
-                        {f"<li>Interaction Type Probability: <b> {type_prob:.2%}</b></li>" if binary_pred == 1 else ""}
-                        {risk_context}
-                        </ul>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    html = (
+                        '<div style="padding:0.5rem;">'
+                        '<ul style="font-size:1.05rem;line-height:1.6;padding-left:1.2rem;">'
+                        + "".join(items)
+                        + "</ul></div>"
+                    )
+                    st.markdown(html, unsafe_allow_html=True)
                 with col3:
                     st.markdown(f'<div class="paragraph">{name_b}</div>', unsafe_allow_html=True)
                     if img_b:
                         st.image(img_b, width='stretch')
 # Footer
 st.markdown(
-    f"""
-    <div class='footer'>
-        ● Model: AushadiNet_GATv2 ({config['hidden_dim']}D, {config['n_gat_layers']} layers) 
-        ● Hackathon Version: For Research & Educational Purposes Only
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+    f"""<div class='footer'>● Model: AushadiNet_GATv2 ({config['hidden_dim']}D, {config['n_gat_layers']} layers) ● Hackathon Version: For Research & Educational Purposes Only
+    </div>""",unsafe_allow_html=True)
