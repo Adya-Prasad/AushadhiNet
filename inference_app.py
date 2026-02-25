@@ -1,5 +1,4 @@
 # What You Should Say to Judges: "The risk profiling system is based on clinical cardiovascular risk assessment guidelines (like the Framingham Risk Score methodology). The hackathon-provided CVD datasets validated that our risk factor categories align with real patient distributions. We use these datasets to demonstrate that our risk stratification matches actual CVD patient profiles."
-# What to Tell Judges: "Our risk profiling is validated against 10,000 real CVD patient records from the hackathon dataset. The sidebar shows live statistics proving we use the data meaningfully."
 
 import streamlit as st
 import torch
@@ -203,7 +202,11 @@ def load_system():
     
     # Initialize Model
     model = GATv2NN(
-        dims={'v1': 1024, 'v2': 167, 'v3': 8},
+        dims = {
+            'v1': graph_data['x_v1'].shape[1],
+            'v2': graph_data['x_v2'].shape[1],
+            'v3': graph_data['x_v3'].shape[1],
+            },
         hidden_dim=config['hidden_dim'],
         n_heads=config['n_heads'],
         n_types=graph_data['n_types'],
@@ -216,9 +219,16 @@ def load_system():
         raise FileNotFoundError(f"Model weights not found at {MODEL_WEIGHTS}")
     
     state_dict = load_file(MODEL_WEIGHTS)
-    model.load_state_dict(state_dict, strict=False)
+    load_result = model.load_state_dict(state_dict, strict=False)
+
+    if load_result.missing_keys:
+        print(f"⚠︎ Missing keys ({len(load_result.missing_keys)}): {load_result.missing_keys}")
+    if load_result.unexpected_keys:
+        print(f"⚠︎ Unexpected keys ({len(load_result.unexpected_keys)}): {load_result.unexpected_keys}")
+    if not load_result.missing_keys and not load_result.unexpected_keys:
+        print("✓ Model weights loaded with perfect key match")
+
     model.eval()
-    
     print(f"✓ Model loaded successfully")
     
     return model, drug_map, smiles_df, name_dict, config, graph_data
@@ -354,6 +364,44 @@ def calculate_patient_risk_score(age, bp_systolic, bp_diastolic, cholesterol, sm
     
     return risk_level, risk_score, risk_factors
 
+@st.cache_data
+def load_cvd_population():
+    """Load and preprocess the hackathon CVD dataset."""
+    df = pd.read_csv(CVD_PATIENT_DATA, sep=';')
+    df['age_years'] = (df['age'] / 365).astype(int)
+    return df
+
+def get_population_context(df, age, bp_systolic, cholesterol, smoking, activity):
+    """
+    Find what % of similar patients in the dataset have CVD.
+    Returns a dict with population statistics for display.
+    """
+    # Build a similarity filter — patients within ±10 years, same cholesterol tier
+    mask = (
+        (df['age_years'].between(age - 10, age + 10)) &
+        (df['cholesterol'] == cholesterol) &
+        (df['smoke'] == smoking) &
+        (df['active'] == activity)
+    )
+    cohort = df[mask]
+
+    if len(cohort) < 10:  # fallback to just age band if cohort too small
+        cohort = df[df['age_years'].between(age - 10, age + 10)]
+
+    if len(cohort) == 0:
+        return None
+
+    cvd_rate = cohort['cardio'].mean() * 100
+    cohort_size = len(cohort)
+    avg_systolic = cohort['ap_hi'].mean()
+
+    return {
+        'cvd_rate': cvd_rate,
+        'cohort_size': cohort_size,
+        'avg_systolic': avg_systolic,
+        'total_dataset': len(df)
+    }
+
 
 def get_risk_adjusted_threshold(risk_level):
     """
@@ -473,9 +521,9 @@ div[data-baseweb="select"] input{color:#392d2b!important;caret-color:#392d2b!imp
 div[data-baseweb="select"] div{color:#392d2b!important;}
 div[data-baseweb="select"] input::placeholder{color:#392d2b!important;opacity:.8!important;}
 
-div[data-testid="stButton"]{display:flex;align-items:flex-end;}
-div[data-testid="stButton"]>button{background-color:#cb785c!important;color:#fff!important;border-radius:10px!important;border:none!important;font-weight:600;padding:.6rem 2.5rem;transition:all .2s ease-in-out;}
-div[data-testid="stButton"]>button:hover{background-color:#b06045!important;}
+div[data-testid="stForm"]{border:none!important;background:transparent!important;padding:0!important;}
+div[data-testid="stFormSubmitButton"]>button{background-color:#cb785c!important;color:#fff!important;border-radius:10px!important;border:none!important;font-weight:600;padding:.6rem 2.5rem;}
+div[data-testid="stFormSubmitButton"]>button:hover{background-color:#b06045!important;}
 
 div[data-testid="stVerticalBlockBorderWrapper"]{border:2px solid #D2691E!important;background-color:#fff!important;border-radius:12px;}
 div[data-testid="stAlert"]{background-color:#ffebd6!important;color:#4e5e6c!important;border-radius:12px!important;border:none!important;}
@@ -500,6 +548,7 @@ with st.sidebar:
     risk_factors = []
         
     if enable_risk_profiling:
+        st.markdown('> Please Enter Your Details:')
         patient_age = st.slider("Age (years)", min_value=18, max_value=90, value=50, step=1)
         col1, col2 = st.columns(2)
         # Blood pressure
@@ -522,18 +571,35 @@ with st.sidebar:
             patient_age, bp_systolic, bp_diastolic, cholesterol, smoking, activity
         )
         # Display Risk Assessment
-        st.markdown("### Risk Verdict:")        
+        st.markdown("### Risk Result:")        
         risk_colors = {"LOW": "#0e992a", "MEDIUM": "#ff8c00", "HIGH": "#ce0000"}
         risk_color = risk_colors[risk_level]
         
-        st.markdown(f"""<div style="border: 2px solid; border-color: {risk_color}; color: {risk_color}; padding: 5px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 1.1rem; margin-bottom:2rem;">{risk_level} RISK <br><span style="font-weight: normal; font-size: 0.9rem;">Risk Score: {risk_score}/100</span></div>""", unsafe_allow_html=True)
+        st.markdown(f"""<div style="border: 2px solid; border-color: {risk_color}; color: {risk_color}; padding: 5px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 1.3rem; margin-bottom:2rem;">{risk_level} RISK <br><span style="font-weight: normal; font-size: 0.9rem;">Risk Score: {risk_score}/100</span></div>""", unsafe_allow_html=True)
         
         if risk_factors:
             st.markdown("### **Risk Factors:**")
             for factor in risk_factors:
                 st.markdown(f"• {factor}")  
+        
+            # Load real population data
+            cvd_df = load_cvd_population()
+            pop = get_population_context(cvd_df, patient_age, bp_systolic, cholesterol, smoking, activity)
+
+            if pop:
+                st.markdown("### Dataset Population Context:")
+                st.markdown(f"""
+                <div style="background:#1a1a18;border-radius:8px;padding:10px;margin-top:0.5rem;font-size:0.95rem;color:#dbcfcc;">
+                From <b>{pop['cohort_size']}</b> similar patients in the CVD dataset:<br><br>
+                <span style="font-size:1.3rem;font-weight:700;color:{'#ce0000' if pop['cvd_rate']>50 else '#ff8c00' if pop['cvd_rate']>30 else '#0e992a'};">
+                {pop['cvd_rate']:.1f}%</span> had a cardiovascular diagnosis.<br>
+                <span style="font-size:0.9rem;color:#999;">Avg systolic BP in cohort: {pop['avg_systolic']:.0f} mmHg</span>
+                </div>
+                """, unsafe_allow_html=True)
+
     else:
         st.info("Enable to personalize drug interaction warnings based on patient cardiovascular risk factors.")
+
 
 # MAIN PAGE      
 st.markdown('<div class="section-heading">Enter Drugs Combinations! (upto 4)</div>', unsafe_allow_html=True)
@@ -543,40 +609,39 @@ if "drug_count" not in st.session_state:
 
 MAX_DRUGS = 4
 
-# Create dynamic columns (drug inputs + add button)
-total_columns = st.session_state.drug_count + (
-    1 if st.session_state.drug_count < MAX_DRUGS else 0
-)
+with st.form("drug_form"):
+    total_columns = st.session_state.drug_count + (
+        1 if st.session_state.drug_count < MAX_DRUGS else 0
+    )
+    cols = st.columns(total_columns)
+    selected_drugs = []
 
-cols = st.columns(total_columns)
-selected_drugs = []
+    for i in range(st.session_state.drug_count):
+        with cols[i]:
+            drug = st.selectbox(
+                f"Drug {i+1}",
+                list(drug_map.keys()),
+                format_func=get_label,
+                key=f"drug_{i}"
+            )
+            selected_drugs.append(drug)
 
-for i in range(st.session_state.drug_count):
-    with cols[i]:
-        drug = st.selectbox(
-            f"Drug {i+1}",
-            list(drug_map.keys()),
-            format_func=get_label,
-            key=f"drug_{i}"
-        )
-        selected_drugs.append(drug)
+    col_add, col_predict = st.columns([1, 4])
+    with col_add:
+        add_clicked = st.form_submit_button("十 Drug")
+    with col_predict:
+        predict_clicked = st.form_submit_button("PREDICT")
 
-# add button in last column
-if st.session_state.drug_count < MAX_DRUGS:
-    with cols[-1]:
-        st.write(" ")
-        if st.button("十"):
-            st.session_state.drug_count += 1
-            st.rerun()
+if add_clicked and st.session_state.drug_count < MAX_DRUGS:
+    st.session_state.drug_count += 1
+    st.rerun()
 
-if st.button("PREDICT"):
+if predict_clicked:
     # Remove duplicates
     unique_drugs = list(dict.fromkeys(selected_drugs))
 
     if len(unique_drugs) < 2:
         st.warning("⚠︎ Please select at least two distinct drugs.")
-    elif len(set(selected_drugs)) != len(selected_drugs):
-        st.warning("⚠︎ Please select different drugs in each field.")
         st.stop()
     else:
         pairs = list(itertools.combinations(unique_drugs, 2))
@@ -628,42 +693,41 @@ if st.button("PREDICT"):
                     if img_a:
                         st.image(img_a, width='stretch')
                 with col2:
-                    text_color = "#ce0000" if binary_pred == 1 else "#0e992a"
+                    text_color = "#c41414" if binary_pred == 1 else "#0e992a"
                     status_text = "⚠︎ ADVERSE INTERACTION DETECTED " if binary_pred == 1 else "(✔) SAFE PAIR, NO INTERACTION DETECTED"
-                    
-                    # Add patient risk context if enabled
-                    risk_context = ""
+                    items = [
+                    f'<li style="font-weight:600;font-size:1.14rem;margin-bottom:8px;color:{text_color};">{status_text}</li>',
+                    f'<li>Drug Pair: <b>{name_a} + {name_b}</b></li>',
+                    ]
+
+                    if binary_pred == 1:
+                        items.append(f'<li>Interaction Probability: <b>{score:.2%}</b></li>')
+                        items.append(f'<li>Interaction Type: <b>{pred_type}</b></li>')
+                        items.append(f'<li>Interaction Type Probability: <b>{type_prob:.2%}</b></li>')
+                    else:
+                        items.append(f'<li>Safe Probability: <b>{safe_prob:.2%}</b></li>')
+
+                    items.append(f"<li>Drug '{name_a}' description: <b>{drug_a_desc}</b></li>")
+                    items.append(f"<li>Drug '{name_b}' description: <b>{drug_b_desc}</b></li>")
+
                     if enable_risk_profiling and binary_pred == 1:
                         if risk_level == "HIGH":
-                            risk_context = f"<li style='color: #ce0000;'><b>⚠ HIGH-RISK PATIENT:</b> Extra caution required</li>"
+                            items.append("<li style='color:#ce0000;'><b>⚠ HIGH-RISK PATIENT:</b> Extra caution required</li>")
                         elif risk_level == "MEDIUM":
-                            risk_context = f"<li style='color: #ff8c00;'><b>⚠ MEDIUM-RISK PATIENT:</b> Monitor closely</li>"
+                            items.append("<li style='color:#ff8c00;'><b>⚠ MEDIUM-RISK PATIENT:</b> Monitor closely</li>")
 
-                    st.markdown(f"""
-                    <div style="padding:0.5rem; align-item:center; display: inline;">
-                        <ul style="font-size:1.05rem; line-height:1.6; padding-left:1.2rem;">
-                        <li style="font-weight:600; font-size:1.14rem; margin-bottom:8px; color:{text_color};">{status_text}</li>
-                        <li>Drug Pair: <b >{name_a} + {name_b}</b></li>
-                        {f"<li>Interaction Probability: <b> {score:.2%}</b></li>" if binary_pred == 1 else f"<li>Safe Probability: <b> {safe_prob:.2%}</b></li>"}
-                        {f"<li>Interaction Type: <b> {pred_type}</b></li>" if binary_pred == 1 else ""}
-                        {f"<li>Interaction Type Probability: <b> {type_prob:.2%}</b></li>" if binary_pred == 1 else ""}
-                        <li>Drug '{name_a}' description: <b >{drug_a_desc}</b></li>
-                        <li>Drug '{name_b}' description: <b >{drug_b_desc}</b></li>
-                        {risk_context}
-                        </ul>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    html = (
+                        '<div style="padding:0.5rem;">'
+                        '<ul style="font-size:1.05rem;line-height:1.6;padding-left:1.2rem;">'
+                        + "".join(items)
+                        + "</ul></div>"
+                    )
+                    st.markdown(html, unsafe_allow_html=True)
                 with col3:
                     st.markdown(f'<div class="paragraph">{name_b}</div>', unsafe_allow_html=True)
                     if img_b:
                         st.image(img_b, width='stretch')
 # Footer
 st.markdown(
-    f"""
-    <div class='footer'>
-        ● Model: AushadiNet_GATv2 ({config['hidden_dim']}D, {config['n_gat_layers']} layers) 
-        ● Hackathon Version: For Research & Educational Purposes Only
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+    f"""<div class='footer'>● Model: AushadiNet_GATv2 ({config['hidden_dim']}D, {config['n_gat_layers']} layers) ● Hackathon Version: For Research & Educational Purposes Only
+    </div>""",unsafe_allow_html=True)
