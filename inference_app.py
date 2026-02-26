@@ -971,8 +971,10 @@ with tab2:
                                 ddi_type_desc = get_type_desc(pred_type)
                                 items.append(f'<li>Interaction Side Effect: <b>{ddi_type_desc}</b></li>')
                                 items.append(f'<li>Type Confidence: <b>{type_prob:.2%}</b></li>')
+                                items.append(f'<li>Modify Therapy/Monitor Closely</li>')
                             else:
                                 items.append(f'<li>Safe Probability: <b>{safe_prob:.2%}</b></li>')
+                                items.append(f'<li>Note: Even if no interactions are found, monitor it and consider patient individual allergies.</li>')
 
                             items.append(f"<li>{name_a} Description: <b>{drug_a_desc}</b></li>")
                             items.append(f"<li>{name_b} Description: <b>{drug_b_desc}</b></li>")
@@ -984,7 +986,7 @@ with tab2:
                                 elif st.session_state.risk_level == "MEDIUM":
                                     items.append("<li style='color:#ff8c00;'>Personalized Verdict: <b>⚠ MEDIUM-RISK PATIENT:</b> Monitor closely — consider dose adjustment.</li>")
                                 elif st.session_state.risk_level == "LOW":
-                                    items.append("<li style='color:#0e992a;'>Personalized Verdict: <b>ℹ LOW-RISK PATIENT:</b> Interaction detected — standard clinical monitoring advised.</li>")
+                                    items.append("<li style='color:#0e992a;'>Personalized Verdict: <b> LOW-RISK PATIENT:</b> Interaction detected — standard clinical monitoring advised.</li>")
 
                             html = '<div style="padding:0.5rem;"><ul style="font-size:1.05rem;line-height:1.6;padding-left:1.2rem;">' + "".join(items) + "</ul></div>"
                             st.markdown(html, unsafe_allow_html=True)

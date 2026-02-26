@@ -1,5 +1,5 @@
 {
-    "0": "No interaction",
+    "0": "Drug A may increase the photosensitizing activities of Drug B. May trigger abnormal, painful, or itchy skin reactions",
     "1": "The serum concentration of the substrate can be increased when it is combined with this inhibitor.",
     "2": "The serum concentration of the substrate can be decreased when it is combined with this inducer.",
     "3": "The serum concentration of Drug A can be increased when it is combined with Drug B.",
@@ -47,7 +47,7 @@
     "45": "Additive myelosuppressive effects",
     "46": "The risk of a hypersensitivity reaction can be increased when Drug A is combined with Drug B.",
     "47": "Risk of infection may increase",
-    "48": "Synergistic nephrotoxicity",
+    "48": "Increase sedation, risk of CNS depression or drops in heart rate/blood pressure",
     "49": "Synergistic ototoxicity",
     "50": "The risk or severity of hepatotoxicity can be increased when Drug A is combined with Drug B.",
     "51": "The risk or severity of neurotoxicity can be increased when Drug A is combined with Drug B.",
