@@ -20,9 +20,9 @@ from PIL import Image
 from difflib import get_close_matches
 
 # 1 CONFIGURATION & PATHS
-MODEL_WEIGHTS = 'models/AushadiNet_GATv2_best.safetensors'
-MODEL_CONFIG = 'models/AushadiNet_GATv2-metadata_best.json'
-GRAPH_DATA = 'models/AushadiNet_Graph_data_best.pt'
+MODEL_WEIGHTS = 'models/AushadiNet_GATv2_ep-159_27_Feb_09-40.safetensors'
+MODEL_CONFIG = 'models/AushadiNet_GATv2-metadata_27_Feb_09-40.json'
+GRAPH_DATA = 'models/graph_data_27_Feb_09-40.pt'
 SMILES_PATH = 'dataset/drugdata/drug_smiles.csv'
 NAMES_PATH = 'dataset/drugdata/drug_names.csv'
 CARDIO_BASE_DATA = 'dataset/cardio_base.csv'
