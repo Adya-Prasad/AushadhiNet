@@ -46,7 +46,7 @@ conda create --prefix ./.condaenv3.11 python=3.11 -y
 conda activate ./.condaenv3.11
 
 # Install dependencies
-pip install requirements.txt
+pip install requirements_setup.txt
 ```
 
 ### Run
