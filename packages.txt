@@ -1,4 +1,3 @@
-# System packages required for RDKit and EasyOCR
 libxrender1
 libgomp1
 libsm6
