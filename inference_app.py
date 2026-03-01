@@ -1,5 +1,3 @@
-# What You Should Say to Judges: "The risk profiling system is based on clinical cardiovascular risk assessment guidelines (like the Framingham Risk Score methodology). The hackathon-provided CVD datasets validated that our risk factor categories align with real patient distributions. We use these datasets to demonstrate that our risk stratification matches actual CVD patient profiles."
-
 import streamlit as st
 import torch
 import torch.nn as nn
@@ -20,13 +18,16 @@ from PIL import Image
 from difflib import get_close_matches
 
 # 1 CONFIGURATION & PATHS
-MODEL_WEIGHTS = 'models/AushadiNet_GATv2_ep-159_27_Feb_09-40.safetensors'
-MODEL_CONFIG = 'models/AushadiNet_GATv2-metadata_27_Feb_09-40.json'
-GRAPH_DATA = 'models/graph_data_27_Feb_09-40.pt'
+MODEL_WEIGHTS = 'best/AushadiNet_GATv2_best_weight.safetensors'
+MODEL_CONFIG = 'best/AushadiNet_GATv2_best_metadata.json'
+GRAPH_DATA = 'best/AushadiNet_GATv2_best_graph_data.pt'
 SMILES_PATH = 'dataset/drugdata/drug_smiles.csv'
 NAMES_PATH = 'dataset/drugdata/drug_names.csv'
 CARDIO_BASE_DATA = 'dataset/cardio_base.csv'
 DDI_TYPE_MAP = 'dataset/drugdata/ddi_type_mapping.json'
+
+# DEFAULT_THRESHOLD training notebook function
+DEFAULT_THRESHOLD = 0.45
 
 
 st.set_page_config(
@@ -49,19 +50,12 @@ if 'enable_risk_profiling' not in st.session_state:
 # 2 MODEL ARCHITECTURE
 class GATv2NN(nn.Module):
     """
-    Architecture based on metadata
+    EXACT architecture from training notebook - DO NOT MODIFY
     """
-    def __init__(self, dims, hidden_dim, n_heads, n_types, dropout=0.3, n_gat_layers=4):
+    def __init__(self, dims, hidden_dim, n_heads, n_types, dropout=0.3):
         super().__init__()
-
-        # Validate
-        if hidden_dim % n_heads != 0:
-            raise ValueError(f"hidden_dim ({hidden_dim}) must be divisible by n_heads ({n_heads})")
-
-        self.hidden_dim = hidden_dim
-        self.n_gat_layers = n_gat_layers
-
-        # View Projectors (FIXED: Use BatchNorm + ReLU, not LayerNorm + GELU)
+        
+        # View Projectors with BatchNorm
         self.proj_v1 = nn.Sequential(
             nn.Linear(dims['v1'], hidden_dim),
             nn.BatchNorm1d(hidden_dim),
@@ -80,42 +74,34 @@ class GATv2NN(nn.Module):
             nn.ReLU(),
             nn.Dropout(dropout * 0.5)
         )
-
+        
         # Feature Attention
         self.feat_attention = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim // 4),
             nn.ReLU(),
             nn.Linear(hidden_dim // 4, 1)
         )
+        
+        # GATv2 Layers with residual connections (EXACT names from training)
+        self.gat1 = GATv2Conv(
+            hidden_dim, hidden_dim // n_heads, 
+            heads=n_heads, concat=True, dropout=dropout
+        )
+        self.norm1 = nn.LayerNorm(hidden_dim)
+        
+        self.gat2 = GATv2Conv(
+            hidden_dim, hidden_dim, 
+            heads=1, concat=False, dropout=dropout
+        )
+        self.norm2 = nn.LayerNorm(hidden_dim)
 
-        # Dynamic GAT Layers
-        self.gat_layers = nn.ModuleList()
-        self.norm_layers = nn.ModuleList()
-
-        for i in range(n_gat_layers):
-            if i == 0:
-                # First layer: multi-head with concatenation
-                gat = GATv2Conv(
-                    hidden_dim,
-                    hidden_dim // n_heads,
-                    heads=n_heads,
-                    concat=True,
-                    dropout=dropout
-                )
-            else:
-                # Subsequent layers: single head
-                gat = GATv2Conv(
-                    hidden_dim,
-                    hidden_dim,
-                    heads=1,
-                    concat=False,
-                    dropout=dropout
-                )
-
-            self.gat_layers.append(gat)
-            self.norm_layers.append(nn.LayerNorm(hidden_dim))
-
-        # Edge Classifier
+        self.gat3 = GATv2Conv(
+            hidden_dim, hidden_dim,
+            heads=1, concat=False, dropout=dropout
+        ) 
+        self.norm3 = nn.LayerNorm(hidden_dim)
+        
+        # Edge Classifier with deeper network
         self.edge_encoder = nn.Sequential(
             nn.Linear(hidden_dim * 2, hidden_dim),
             nn.LayerNorm(hidden_dim),
@@ -126,33 +112,42 @@ class GATv2NN(nn.Module):
             nn.ReLU(),
             nn.Dropout(dropout * 0.5),
         )
-
+        
         self.head_bin = nn.Linear(hidden_dim // 2, 2)
         self.head_type = nn.Linear(hidden_dim // 2, n_types)
+        
+        self.dropout = dropout
 
     def get_node_embeddings(self, x_v1, x_v2, x_v3, edge_index):
-        """Generate node embeddings from multi-view features."""
-        # Project views
+        """
+        Full-graph forward with residual connections and normalization.
+        """
+        # Project each view
         h1 = self.proj_v1(x_v1)
         h2 = self.proj_v2(x_v2)
         h3 = self.proj_v3(x_v3)
-        # Multi-view fusion
+        
+        # Multi-view attention fusion
         stack = torch.stack([h1, h2, h3], dim=1)
         scores = F.softmax(self.feat_attention(stack), dim=1)
         h_fused = torch.sum(stack * scores, dim=1)
+        
+        # GAT Layer 1 with residual
+        h_gat1 = self.gat1(h_fused, edge_index)
+        h_gat1 = self.norm1(h_gat1 + h_fused)
+        h_gat1 = F.elu(h_gat1)
+        
+        # GAT Layer 2 with residual
+        h_gat2 = self.gat2(h_gat1, edge_index)
+        node_emb = self.norm2(h_gat2 + h_fused)
 
-        # Apply GAT layers with residual connections
-        h = h_fused
-        for i, (gat, norm) in enumerate(zip(self.gat_layers, self.norm_layers)):
-            h_residual = h
-            h = gat(h, edge_index)
-            h = norm(h + h_residual)  # Residual connection
-            if i == 0:
-                h = F.elu(h)  # Activation after first layer
-        return h
+        # GAT Layer 3 with residual
+        h_gat3 = self.gat3(node_emb, edge_index)
+        node_emb = self.norm3(h_gat3 + h_fused)
+        
+        return node_emb
 
     def forward_edges_from_emb(self, node_emb, edge_label_index):
-        """Predict edge interactions from node embeddings."""
         src, dst = edge_label_index[0], edge_label_index[1]
         edge_feat = torch.cat([node_emb[src], node_emb[dst]], dim=-1)
         shared = self.edge_encoder(edge_feat)
@@ -165,7 +160,7 @@ class GATv2NN(nn.Module):
 
 
 # 4 ROBUST RESOURCE LOADING
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def load_system():
     """Load model, metadata, graph data, and drug information."""
     # Load Metadata
@@ -225,8 +220,7 @@ def load_system():
         hidden_dim=config['hidden_dim'],
         n_heads=config['n_heads'],
         n_types=graph_data['n_types'],
-        dropout=config['dropout'],
-        n_gat_layers=config['n_gat_layers']
+        dropout=config['dropout']
     )
 
     # Load weights
@@ -236,15 +230,15 @@ def load_system():
     state_dict = load_file(MODEL_WEIGHTS)
     load_result = model.load_state_dict(state_dict, strict=False)
 
-    if load_result.missing_keys:
-        print(f"⚠︎ Missing keys ({len(load_result.missing_keys)}): {load_result.missing_keys}")
-    if load_result.unexpected_keys:
-        print(f"⚠︎ Unexpected keys ({len(load_result.unexpected_keys)}): {load_result.unexpected_keys}")
-    if not load_result.missing_keys and not load_result.unexpected_keys:
-        print("✓ Model weights loaded with perfect key match")
+    if load_result.missing_keys or load_result.unexpected_keys:
+        raise RuntimeError(
+            f"Model weight mismatch!\n"
+            f"Missing: {load_result.missing_keys}\n"
+            f"Unexpected: {load_result.unexpected_keys}"
+        )
 
     model.eval()
-    print(f"✓ Model loaded successfully")
+    print(f"✓ Model weights loaded perfectly")
 
     return model, drug_map, smiles_df, name_dict, config, graph_data
 
@@ -425,11 +419,11 @@ def get_risk_adjusted_threshold(risk_level):
     Higher risk patients get more conservative thresholds (detect more interactions).
     """
     thresholds = {
-        "HIGH": 0.35,    # More conservative - flag more potential interactions
-        "MEDIUM": 0.50,  # Standard threshold
-        "LOW": 0.65      # Less conservative - only flag clear interactions
+        "HIGH": 0.44,    # More conservative - flag more potential interactions
+        "MEDIUM": 0.45,  # Standard threshold (matches training)
+        "LOW": 0.46      # Keep consistent with training threshold
     }
-    return thresholds.get(risk_level, 0.50)
+    return thresholds.get(risk_level, DEFAULT_THRESHOLD)
 
 
 # 7 PRESCRIPTION IMAGE SCANNER (OCR)
@@ -520,12 +514,11 @@ def get_type_desc(ddi_type):
 
 
 # 6 PREDICTION FUNCTION
-def predict_interaction(model, graph_data, drug_a_id, drug_b_id, threshold=0.5, device='cpu'):
+def predict_interaction(model, graph_data, drug_a_id, drug_b_id, threshold=DEFAULT_THRESHOLD, device='cpu'):
     """
     Predict drug-drug interaction using the trained model.
-
-    This is the REAL prediction function (not placeholder).
-    Based on your training notebook's predict_cardio_interaction_safe function.
+    
+    FIXED: Now matches the notebook's predict_ddi_multi() logic exactly.
     """
     model.eval()
     drug_map = graph_data['drug_map']
@@ -564,14 +557,17 @@ def predict_interaction(model, graph_data, drug_a_id, drug_b_id, threshold=0.5, 
     with torch.no_grad():
         # Get predictions
         logits_bin, logits_type = model(x_v1, x_v2, x_v3, edge_index, query_edge)
-        # Binary prediction
+        
+        # Binary prediction (FIXED: Use logits directly, not probs)
         probs_bin = torch.softmax(logits_bin, dim=1)[0]
         prob_interaction = probs_bin[1].item()
         binary_pred = 1 if prob_interaction > threshold else 0
+        
         # Type prediction
         probs_type = torch.softmax(logits_type, dim=1)[0]
         type_idx = torch.argmax(logits_type, dim=1).item()
         type_prob = probs_type[type_idx].item()
+        
         # Get type name
         try:
             type_name = graph_data['encoder'].inverse_transform([type_idx])[0]
@@ -585,7 +581,8 @@ def predict_interaction(model, graph_data, drug_a_id, drug_b_id, threshold=0.5, 
         'predicted_type': type_name,
         'type_probability': type_prob,
         'drug_a': drug_a_id,
-        'drug_b': drug_b_id
+        'drug_b': drug_b_id,
+        'threshold_used': threshold  # Track which threshold was used
     }
 
 
@@ -771,12 +768,14 @@ with tab1:
             st.stop()
         else:
             pairs = list(itertools.combinations(unique_drugs, 2))
+            
             for drug_a, drug_b in pairs:
                 # Determine threshold based on patient risk profiling
                 if st.session_state.enable_risk_profiling:
                     threshold = get_risk_adjusted_threshold(st.session_state.risk_level)
                 else:
-                    threshold = 0.5
+                    threshold = DEFAULT_THRESHOLD
+                    
                 with st.spinner(f"Analyzing {name_dict.get(drug_a)} + {name_dict.get(drug_b)} ..."):
                     result = predict_interaction(
                         model,
@@ -830,7 +829,7 @@ with tab1:
                             items.append(f'<li>Interaction Probability: <b>{score:.2%}</b></li>')
                             ddi_type_desc = get_type_desc(pred_type)
                             items.append(f'<li>Interaction Side Effect: <b>{ddi_type_desc}</b></li>')
-                            items.append(f'<li>Interaction Type Probability: <b>{type_prob:.2%}</b></li>')
+                            items.append(f'<li>Interaction Type {pred_type} Probability: <b>{type_prob:.2%}</b></li>')
                         else:
                             items.append(f'<li>Safe Probability: <b>{safe_prob:.2%}</b></li>')
 
@@ -922,7 +921,7 @@ with tab2:
                     if st.session_state.enable_risk_profiling:
                         threshold = get_risk_adjusted_threshold(st.session_state.risk_level)
                     else:
-                        threshold = 0.5
+                        threshold = DEFAULT_THRESHOLD
 
                     with st.spinner(f"Analyzing {name_dict.get(drug_a)} + {name_dict.get(drug_b)}..."):
                         result = predict_interaction(

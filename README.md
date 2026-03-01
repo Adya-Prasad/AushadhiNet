@@ -1,3 +1,24 @@
+## 🖥️ Development Environment — Powered by Coder
+
+This project uses [Coder](https://coder.com) for reproducible Cloud Development Environments.
+
+### Prerequisites
+- [Coder installed](https://coder.com/docs/install)
+- Docker Desktop running
+
+### Launch Workspace
+```bash
+coder server                                              # Start Coder server
+coder login http://localhost:3000                        # Authenticate
+coder templates push ddi-predictor --directory coder-template/
+coder create ddi-workspace --template ddi-predictor     # Spin up workspace
+
+# to stop
+coder stop ddi-workspace
+```
+
+Open http://localhost:3000 → click **"DDI Predictor App"** → Streamlit launches instantly.
+
 # AushadhiNet: CVD Drug Safety Monitor
 
 **Model Name**: AushadhiNet  
