@@ -59,6 +59,8 @@ pip install requirements_setup.txt
 streamlit run streamlit_app.py
 ```
 
+Checkout the live deployed app: [https://aushadhinet-gatv2.streamlit.app/](https://aushadhinet-gatv2.streamlit.app/)
+
 ## Run with Coder Workspace
 
 This project uses [Coder](https://coder.com) for reproducible Cloud Development Environments.
